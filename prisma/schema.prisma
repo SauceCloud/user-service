@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  username    String   @unique @db.Citext
+  birthDate   DateTime @map("birth_date") @db.Date
+  description String?
+  email       String   @unique
+  password    String
+  role        UserRole @default(user)
+  isActive    Boolean  @default(true) @map("is_active")
+  tokens      Token[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  admin
+  user
+}
+
+model Token {
+  userId      String   @map("user_id")
+  deviceId    String   @map("device_id")
+  refreshHash String
+  userAgent   String?  @map("user_agent")
+  ipAddress   String?  @map("ip_address")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  expiresAt   DateTime @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, deviceId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("tokens")
+}
