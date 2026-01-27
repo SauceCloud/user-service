@@ -1,4 +1,7 @@
-import { NestFactory } from '@nestjs/core'
+import fastifyCookie from '@fastify/cookie'
+import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
+import { NestFactory, Reflector } from '@nestjs/core'
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -11,6 +14,35 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter()
   )
-  await app.listen(process.env.PORT ?? 3000)
+
+  const config = app.get(ConfigService)
+
+  await app.register(fastifyCookie, {
+    secret: config.getOrThrow<string>('COOKIES_SECRET'),
+  })
+
+  app.useGlobalInterceptors(
+    new ClassSerializerInterceptor(app.get(Reflector), {
+      excludeExtraneousValues: true,
+    })
+  )
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: false,
+      transform: true,
+    })
+  )
+
+  app.enableCors({
+    origin: config.getOrThrow<string>('ALLOWED_ORIGIN'),
+    credentials: true,
+    exposedHeaders: ['set-cookie'],
+  })
+
+  app.setGlobalPrefix('api')
+
+  await app.listen(config.getOrThrow<number>('APP_PORT'))
 }
 bootstrap()
