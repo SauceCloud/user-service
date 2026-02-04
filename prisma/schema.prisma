@@ -10,10 +10,10 @@ datasource db {
 
 model User {
   id          String   @id @default(uuid())
-  username    String   @unique @db.Citext
+  username    String   @unique(map: "uq_user_email") @db.Citext
   birthDate   DateTime @map("birth_date") @db.Date
   description String?
-  email       String   @unique
+  email       String   @unique(map: "uq_user_username") @db.Citext
   password    String
   role        UserRole @default(user)
   isActive    Boolean  @default(true) @map("is_active")
