@@ -20,7 +20,7 @@ export default registerAs('cookies', (): CookiesConfig => {
       name: 'refreshToken',
       path: '/',
       httpOnly: true,
-      sameSite: 'none',
+      sameSite: isProd ? 'none' : 'lax',
       secure: isProd,
     },
   }

@@ -1,12 +1,9 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common'
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common'
 import { FastifyRequest } from 'fastify'
 
 import { TokenService } from '@/token/token.service'
+
+import { AppException } from '../exceptions/api.exceptions'
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -16,10 +13,10 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<FastifyRequest>()
 
     const token = this.extractTokenFromHeader(request)
-    if (!token) throw new UnauthorizedException()
+    if (!token) throw AppException.authInvalidToken()
 
     const payload = this.tokenService.validateAccessToken(token)
-    if (!payload || !payload.isActive) throw new UnauthorizedException()
+    if (!payload || !payload.isActive) throw AppException.authInvalidToken()
 
     request.user = {
       id: payload.sub,

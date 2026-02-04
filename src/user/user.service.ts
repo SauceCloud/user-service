@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common'
+import { Injectable } from '@nestjs/common'
 
+import { AppException } from '@/common/exceptions/api.exceptions'
 import { PrismaService } from '@/prisma/prisma.service'
 import { TokenService } from '@/token/token.service'
 
@@ -20,7 +21,7 @@ export class UserService {
       where: { id },
     })
 
-    if (!user) throw new BadRequestException('User not found')
+    if (!user) throw AppException.userNotFound()
 
     return new UserPrivateDto(user)
   }
@@ -30,7 +31,7 @@ export class UserService {
       where: { username },
     })
 
-    if (!user) throw new BadRequestException('User not found')
+    if (!user) throw AppException.userNotFound()
 
     return new UserPublicDto(user)
   }
@@ -58,11 +59,11 @@ export class UserService {
         select: { id: true, username: true },
       })
 
-      if (!user) throw new BadRequestException('User not found')
+      if (!user) throw AppException.userNotFound()
 
       if (username && username != user.username) {
         const { available } = await this.isUsernameAvailable(username)
-        if (!available) throw new BadRequestException('Username already taken')
+        if (!available) throw AppException.usernameTaken()
       }
 
       return await tx.user.update({

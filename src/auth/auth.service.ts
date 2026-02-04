@@ -1,12 +1,11 @@
-import {
-  BadRequestException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common'
+import { Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { hash, verify } from 'argon2'
 
 import { UserPrivateDto } from '@/common/dtos/user-private.dto'
+import { AppException } from '@/common/exceptions/api.exceptions'
+import { isP2002 } from '@/common/utils/prisma.utils'
+import { isEqualIgnoreCase } from '@/common/utils/string.utils'
 import { PrismaService } from '@/prisma/prisma.service'
 import { TokenService } from '@/token/token.service'
 
@@ -24,50 +23,59 @@ export class AuthService {
 
   async register(data: RegisterDto, meta: AuthMetadata) {
     const { username, birthDate, email, password } = data
-
-    const existedUser = await this.prisma.user.findUnique({ where: { email } })
-
-    if (existedUser)
-      throw new BadRequestException(
-        'A user with this email address already exists.'
-      )
-
     const hashPassword = await hash(password)
 
     return this.prisma.$transaction(async tx => {
-      const user = await tx.user.create({
-        data: {
-          username,
-          birthDate: new Date(birthDate),
-          email,
-          password: hashPassword,
-        },
-      })
+      try {
+        const user = await tx.user.create({
+          data: {
+            username,
+            birthDate: new Date(birthDate),
+            email,
+            password: hashPassword,
+          },
+        })
 
-      const access = this.tokenService.generateAccessToken({
-        sub: user.id,
-        role: user.role,
-        isActive: user.isActive,
-      })
+        const accessToken = this.tokenService.generateAccessToken({
+          sub: user.id,
+          role: user.role,
+          isActive: user.isActive,
+        })
 
-      const refresh = this.tokenService.generateRefreshToken({
-        sub: user.id,
-        deviceId: meta.deviceId,
-      })
+        const refreshToken = this.tokenService.generateRefreshToken({
+          sub: user.id,
+          deviceId: meta.deviceId,
+        })
 
-      await this.tokenService.saveTokenTx(
-        tx,
-        user.id,
-        refresh,
-        meta.deviceId,
-        meta.userAgent,
-        meta.ipAddress
-      )
+        await this.tokenService.saveTokenTx(
+          tx,
+          user.id,
+          refreshToken,
+          meta.deviceId,
+          meta.userAgent,
+          meta.ipAddress
+        )
 
-      return {
-        access,
-        refresh,
-        user: new UserPrivateDto(user),
+        return {
+          accessToken,
+          refreshToken,
+          user: new UserPrivateDto(user),
+        }
+      } catch (err) {
+        if (isP2002(err)) {
+          const existing = await this.prisma.user.findFirst({
+            where: { OR: [{ email }, { username }] },
+            select: { email: true, username: true },
+          })
+
+          if (isEqualIgnoreCase(existing?.email, email))
+            throw AppException.authEmailTaken()
+          if (isEqualIgnoreCase(existing?.username, username))
+            throw AppException.usernameTaken()
+
+          throw AppException.conflict('User already exists')
+        }
+        throw err
       }
     })
   }
@@ -77,22 +85,20 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { email } })
 
-    if (!user || !user.isActive)
-      throw new BadRequestException('Incorrect email or password')
+    if (!user) throw AppException.authInvalidCredentials()
+    if (!user.isActive) throw AppException.userInactive()
 
     const isPassEquals = await verify(user.password, password)
-
-    if (!isPassEquals)
-      throw new BadRequestException('Incorrect email or password')
+    if (!isPassEquals) throw AppException.authInvalidCredentials()
 
     return this.prisma.$transaction(async tx => {
-      const access = this.tokenService.generateAccessToken({
+      const accessToken = this.tokenService.generateAccessToken({
         sub: user.id,
         role: user.role,
         isActive: user.isActive,
       })
 
-      const refresh = this.tokenService.generateRefreshToken({
+      const refreshToken = this.tokenService.generateRefreshToken({
         sub: user.id,
         deviceId: meta.deviceId,
       })
@@ -100,13 +106,13 @@ export class AuthService {
       await this.tokenService.saveTokenTx(
         tx,
         user.id,
-        refresh,
+        refreshToken,
         meta.deviceId,
         meta.userAgent,
         meta.ipAddress
       )
 
-      return { access, refresh, user: new UserPrivateDto(user) }
+      return { accessToken, refreshToken, user: new UserPrivateDto(user) }
     })
   }
 
@@ -115,6 +121,7 @@ export class AuthService {
     if (!payload) return
 
     await this.tokenService.removeTokenByDevice(payload.sub, payload.deviceId)
+    return { message: 'Logged out from device successfully' }
   }
 
   async logoutFromDevice(userId: string, deviceId: string) {
@@ -122,9 +129,9 @@ export class AuthService {
     return { message: 'Logged out from device successfully' }
   }
 
-  async refresh(refreshToken: string, ipAddress: string) {
-    const payload = this.tokenService.validateRefreshToken(refreshToken)
-    if (!payload) throw new UnauthorizedException()
+  async refresh(expiredRefreshToken: string, ipAddress: string) {
+    const payload = this.tokenService.validateRefreshToken(expiredRefreshToken)
+    if (!payload) throw AppException.authRefreshTokenInvalid()
 
     return this.prisma.$transaction(async tx => {
       const session = await tx.token.findUnique({
@@ -133,9 +140,9 @@ export class AuthService {
         },
       })
 
-      if (!session) throw new UnauthorizedException()
+      if (!session) throw AppException.authRefreshTokenInvalid()
 
-      const isValid = await verify(session.refreshHash, refreshToken)
+      const isValid = await verify(session.refreshHash, expiredRefreshToken)
       if (!isValid) {
         await tx.token.delete({
           where: {
@@ -145,7 +152,7 @@ export class AuthService {
             },
           },
         })
-        throw new UnauthorizedException()
+        throw AppException.authRefreshTokenInvalid()
       }
 
       const user = await tx.user.findUnique({
@@ -153,15 +160,15 @@ export class AuthService {
         select: { role: true, isActive: true },
       })
 
-      if (!user) throw new UnauthorizedException()
+      if (!user) throw AppException.userNotFound()
 
-      const access = this.tokenService.generateAccessToken({
+      const accessToken = this.tokenService.generateAccessToken({
         sub: payload.sub,
         role: user.role,
         isActive: user.isActive,
       })
 
-      const refresh = this.tokenService.generateRefreshToken({
+      const refreshToken = this.tokenService.generateRefreshToken({
         sub: payload.sub,
         deviceId: payload.deviceId,
       })
@@ -169,13 +176,13 @@ export class AuthService {
       await this.tokenService.saveTokenTx(
         tx,
         payload.sub,
-        refresh,
+        refreshToken,
         session.deviceId,
         session.userAgent,
         ipAddress
       )
 
-      return { access, refresh }
+      return { accessToken, refreshToken }
     })
   }
 
