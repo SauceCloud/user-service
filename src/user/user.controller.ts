@@ -48,7 +48,6 @@ export class UserController {
     @CurrentUser('id') id: string,
     @Body() dto: UpdateUserDto
   ) {
-    console.log(dto)
     return this.userService.updateProfile(id, dto)
   }
 

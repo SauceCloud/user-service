@@ -1,10 +1,7 @@
-import {
-  createParamDecorator,
-  ExecutionContext,
-  UnauthorizedException,
-} from '@nestjs/common'
+import { createParamDecorator, ExecutionContext } from '@nestjs/common'
 import { FastifyRequest } from 'fastify'
 
+import { AppException } from '../exceptions/api.exceptions'
 import { RequestUser } from '../types/fastify'
 
 export const CurrentUser = createParamDecorator(
@@ -12,7 +9,7 @@ export const CurrentUser = createParamDecorator(
     const request = ctx.switchToHttp().getRequest<FastifyRequest>()
     const user = request.user
 
-    if (!user) throw new UnauthorizedException('User not authenticated')
+    if (!user) throw AppException.authUnauthorized()
 
     return data ? user[data] : user
   }

@@ -1,19 +1,10 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Req,
-  Res,
-  UnauthorizedException,
-} from '@nestjs/common'
+import { Body, Controller, Get, Param, Post, Req, Res } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { RequireAuth } from '@/common/decorators/require-auth.decorator'
+import { AppException } from '@/common/exceptions/api.exceptions'
 import { isProd } from '@/common/utils/env.util'
 import { RefreshCookieConfig } from '@/config/cookies.config'
 
@@ -38,24 +29,27 @@ export class AuthController {
     const deviceId = req.headers['x-device-id']
 
     if (typeof deviceId !== 'string' || !deviceId.trim())
-      throw new BadRequestException('x-device-id header is required')
+      throw AppException.invalidHeader('x-device-id header is required')
 
-    const data = await this.authService.register(dto, {
-      userAgent,
-      deviceId,
-      ipAddress: req.ip,
-    })
+    const { accessToken, refreshToken, user } = await this.authService.register(
+      dto,
+      {
+        userAgent,
+        deviceId,
+        ipAddress: req.ip,
+      }
+    )
 
     const refreshCookie =
       this.configService.getOrThrow<RefreshCookieConfig>('cookies.refresh')
-    res.setCookie(refreshCookie.name, data.refresh, {
+    res.setCookie(refreshCookie.name, refreshToken, {
       ...refreshCookie,
       maxAge:
         this.configService.getOrThrow<number>('REFRESH_TTL_DAYS') * 86_400,
       secure: isProd,
     })
 
-    return data
+    return { accessToken, user }
   }
 
   @Post('login')
@@ -68,24 +62,27 @@ export class AuthController {
     const deviceId = req.headers['x-device-id']
 
     if (typeof deviceId !== 'string' || !deviceId.trim())
-      throw new BadRequestException('x-device-id header is required')
+      throw AppException.invalidHeader('x-device-id header is required')
 
-    const data = await this.authService.login(dto, {
-      userAgent,
-      deviceId,
-      ipAddress: req.ip,
-    })
+    const { accessToken, refreshToken, user } = await this.authService.login(
+      dto,
+      {
+        userAgent,
+        deviceId,
+        ipAddress: req.ip,
+      }
+    )
 
     const refreshCookie =
       this.configService.getOrThrow<RefreshCookieConfig>('cookies.refresh')
-    res.setCookie(refreshCookie.name, data.refresh, {
+    res.setCookie(refreshCookie.name, refreshToken, {
       ...refreshCookie,
       maxAge:
         this.configService.getOrThrow<number>('REFRESH_TTL_DAYS') * 86_400,
       secure: isProd,
     })
 
-    return data
+    return { accessToken, user }
   }
 
   @Post('logout')
@@ -93,14 +90,19 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply
   ) {
-    const refreshToken = req.cookies?.refreshToken
-    if (refreshToken) await this.authService.logout(refreshToken)
+    const refreshToken = req.cookies['refreshToken']
 
-    const refreshCookie =
-      this.configService.getOrThrow<RefreshCookieConfig>('cookies.refresh')
-    res.clearCookie(refreshCookie.name, refreshCookie)
+    if (refreshToken) {
+      await this.authService.logout(refreshToken)
 
-    return { message: 'Logged out successfully' }
+      const refreshCookie =
+        this.configService.getOrThrow<RefreshCookieConfig>('cookies.refresh')
+      res.clearCookie(refreshCookie.name, refreshCookie)
+
+      return { message: 'Logged out successfully' }
+    }
+
+    return { message: 'No active session found' }
   }
 
   @RequireAuth()
@@ -118,20 +120,23 @@ export class AuthController {
     @Res({ passthrough: true }) res: FastifyReply
   ) {
     const refreshToken = req.cookies['refreshToken']
-    if (!refreshToken) throw new UnauthorizedException()
+    if (!refreshToken) throw AppException.authRefreshTokenInvalid()
 
     const data = await this.authService.refresh(refreshToken, req.ip)
 
     const refreshCookie =
       this.configService.getOrThrow<RefreshCookieConfig>('cookies.refresh')
-    res.setCookie(refreshCookie.name, data.refresh, {
+    res.setCookie(refreshCookie.name, data.refreshToken, {
       ...refreshCookie,
       maxAge:
         this.configService.getOrThrow<number>('REFRESH_TTL_DAYS') * 86_400,
       secure: isProd,
     })
 
-    return data
+    return {
+      accessToken: data.accessToken,
+      user: data.user,
+    }
   }
 
   @RequireAuth()
