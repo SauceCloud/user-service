@@ -10,25 +10,28 @@ import {
 } from 'class-validator'
 
 import { IsBirthDateValidConstraint } from '@/auth/decorators/is-birth-date-valid.decorator'
+import { ValidationCode } from '@/common/constants/validation-codes.enum'
+import { vmsg } from '@/common/utils/validation.utils'
 
 export class UpdateUserDto {
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  @MinLength(5)
-  @MaxLength(32)
-  @Matches(/^[a-zA-Z0-9_]+$/)
+  @MinLength(5, { message: vmsg(ValidationCode.USERNAME_MIN) })
+  @MaxLength(32, { message: vmsg(ValidationCode.USERNAME_MAX) })
+  @Matches(/^[a-zA-Z0-9_]+$/, {
+    message: vmsg(ValidationCode.USERNAME_PATTERN),
+  })
   readonly username?: string
 
   @IsOptional()
-  @IsNotEmpty()
-  @IsDateString()
-  @Validate(IsBirthDateValidConstraint)
-  readonly birthDate?: Date
+  @IsDateString({}, { message: vmsg(ValidationCode.BIRTHDATE_ISO) })
+  @Validate(IsBirthDateValidConstraint, {
+    message: vmsg(ValidationCode.BIRTHDATE_INVALID),
+  })
+  readonly birthDate?: string
 
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  @MaxLength(160)
+  @MaxLength(160, { message: vmsg(ValidationCode.DESCRIPTION_MIN) })
   readonly description?: string | null
 }

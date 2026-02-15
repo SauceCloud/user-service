@@ -157,7 +157,6 @@ export class AuthService {
 
       const user = await tx.user.findUnique({
         where: { id: payload.sub },
-        select: { role: true, isActive: true },
       })
 
       if (!user) throw AppException.userNotFound()
@@ -182,7 +181,7 @@ export class AuthService {
         ipAddress
       )
 
-      return { accessToken, refreshToken }
+      return { accessToken, refreshToken, user: new UserPrivateDto(user) }
     })
   }
 

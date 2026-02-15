@@ -133,7 +133,10 @@ export class AuthController {
       secure: isProd,
     })
 
-    return { accessToken: data.accessToken }
+    return {
+      accessToken: data.accessToken,
+      user: data.user,
+    }
   }
 
   @RequireAuth()
