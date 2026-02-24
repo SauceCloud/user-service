@@ -7,6 +7,9 @@ export class UserPublicDto {
   @Expose()
   readonly description: string | null
 
+  @Expose()
+  readonly avatarUrl: string | null
+
   constructor(partial: Partial<UserPublicDto>) {
     Object.assign(this, partial)
   }
