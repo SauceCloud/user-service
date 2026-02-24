@@ -11,6 +11,9 @@ export class UserPrivateDto {
   readonly description: string | null
 
   @Expose()
+  readonly avatarUrl: string | null
+
+  @Expose()
   readonly email: string
 
   constructor(partial: Partial<UserPrivateDto>) {
