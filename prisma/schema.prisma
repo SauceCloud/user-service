@@ -13,6 +13,8 @@ model User {
   username    String   @unique(map: "uq_user_email") @db.Citext
   birthDate   DateTime @map("birth_date") @db.Date
   description String?
+  avatarUrl   String?  @map("avatar_url")
+  avatarKey   String?  @map("avatar_key")
   email       String   @unique(map: "uq_user_username") @db.Citext
   password    String
   role        UserRole @default(user)
